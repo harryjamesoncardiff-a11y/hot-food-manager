@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hot Food Manager</title>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    margin:20px;
+    background:#f4f4f4;
+}
+
+.dark{
+    background:#1f1f1f;
+    color:white;
+}
+
+.card{
+    background:white;
+    padding:15px;
+    border-radius:8px;
+    margin-bottom:15px;
+}
+
+.dark .card{
+    background:#333;
+}
+
+input,select,button,textarea{
+    padding:8px;
+    margin:4px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+td,th{
+    border:1px solid #ccc;
+    padding:6px;
+}
+
+#seatMap{
+    max-height:500px;
+    overflow:auto;
+}
+
+.row{
+    display:flex;
+    gap:4px;
+    margin-bottom:4px;
+    align-items:center;
+}
+
+.rowLabel{
+    width:35px;
+    font-weight:bold;
+}
+
+.seat{
+    width:42px;
+    height:42px;
+    border:none;
+    border-radius:6px;
+    font-size:11px;
+    cursor:pointer;
+}
+
+.empty{
+    background:#ddd;
+}
+
+.selected{
+    background:#2196F3;
+    color:white;
+}
+
+.pending{
+    background:#ff9800;
+    color:white;
+}
+
+.served{
+    background:#4CAF50;
+    color:white;
+}
+
+.aisle{
+    width:20px;
+}
+
+textarea{
+    width:100%;
+    height:150px;
+}
+</style>
+</head>
+<body>
+
+<h1>🍔 Hot Food Manager</h1>
+
+<button onclick="toggleDarkMode()">
+Dark Mode
+</button>
+
+<div class="card">
+
+<h2>Menu</h2>
+
+<input id="itemName" placeholder="Food Item">
+<input id="itemStock" type="number" placeholder="Stock">
+
+<button onclick="addMenuItem()">
+Add
+</button>
+
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Stock</th>
+<th>Remove</th>
+</tr>
+</thead>
+<tbody id="menuTable"></tbody>
+</table>
+
+</div>
+
+<div class="card">
+
+<h2>Seat Map</h2>
+
+Selected Seat:
+<strong id="selectedSeatLabel">
+None
+</strong>
+
+<div id="seatMap"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Add Order</h2>
+
+<input id="seatInput" placeholder="Seat">
+
+<select id="foodSelect"></select>
+
+<input id="qty" type="number" value="1" min="1">
+
+<button onclick="addOrder()">
+Add Order
+</button>
+
+</div>
+
+<div class="card">
+
+<h2>Cook Totals</h2>
+
+<div id="cookTotals"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Passenger Summary</h2>
+
+<div id="passengerSummary"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Orders</h2>
+
+<table>
+<thead>
+<tr>
+<th>Seat</th>
+<th>Item</th>
+<th>Qty</th>
+<th>Status</th>
+<th>Delete</th>
+</tr>
+</thead>
+
+<tbody id="ordersTable"></tbody>
+
+</table>
+
+</div>
+
+<div class="card">
+
+<h2>Crew Copy List</h2>
+
+<textarea id="crewList" readonly></textarea>
+
+</div>
+
+<script>
+
+let menu =
+JSON.parse(localStorage.getItem("menu")) || [];
+
+let orders =
+JSON.parse(localStorage.getItem("orders")) || [];
+
+let selectedSeat = "";
+
+function saveData(){
+
+localStorage.setItem(
+"menu",
+JSON.stringify(menu)
+);
+
+localStorage.setItem(
+"orders",
+JSON.stringify(orders)
+);
+
+}
+
+function addMenuItem(){
+
+let name =
+document.getElementById("itemName")
+.value.trim();
+
+let stock =
+parseInt(
+document.getElementById("itemStock").value
+);
+
+if(!name || isNaN(stock)) return;
+
+menu.push({
+id:Date.now(),
+name:name,
+stock:stock
+});
+
+saveData();
+
+document.getElementById("itemName").value="";
+document.getElementById("itemStock").value="";
+
+renderAll();
+}
+
+function removeMenuItem(id){
+
+menu = menu.filter(
+m => m.id !== id
+);
+
+saveData();
+renderAll();
+}
+
+function getRemaining(itemId){
+
+let item =
+menu.find(x=>x.id===itemId);
+
+let sold =
+orders
+.filter(o=>o.itemId===itemId)
+.reduce((a,b)=>a+b.qty,0);
+
+return item.stock - sold;
+}
+
+function addOrder(){
+
+let seat =
+selectedSeat ||
+document.getElementById("seatInput")
+.value.trim()
+.toUpperCase();
+
+let itemId =
+Number(
+document.getElementById("foodSelect").value
+);
+
+let qty =
+parseInt(
+document.getElementById("qty").value
+);
+
+if(!seat) return;
+
+if(qty > getRemaining(itemId)){
+alert("Not enough stock");
+return;
+}
+
+let existing =
+orders.find(o =>
+
+o.seat===seat &&
+o.itemId===itemId
+
+);
+
+if(existing){
+
+existing.qty += qty;
+
+}
+else{
+
+orders.push({
+id:Date.now(),
+seat,
+itemId,
+qty,
+served:false
+});
+
+}
+
+saveData();
+renderAll();
+}
+
+function deleteOrder(id){
+
+orders = orders.filter(
+o => o.id !== id
+);
+
+saveData();
+renderAll();
+}
+
+function toggleServed(id){
+
+let order =
+orders.find(o=>o.id===id);
+
+order.served = !order.served;
+
+saveData();
+renderAll();
+}
+
+function renderSeatMap(){
+
+const letters =
+["A","B","C","D","E","F"];
+
+let html = "";
+
+for(let row=1; row<=40; row++){
+
+html += `<div class="row">`;
+
+html +=
+`<div class="rowLabel">${row}</div>`;
+
+letters.forEach(letter=>{
+
+let seat =
+row + letter;
+
+let status = "empty";
+
+let seatOrders =
+orders.filter(
+o => o.seat === seat
+);
+
+if(seatOrders.length){
+
+if(
+seatOrders.every(
+o=>o.served
+)
+){
+status="served";
+}
+else{
+status="pending";
+}
+
+}
+
+if(selectedSeat===seat){
+status="selected";
+}
+
+html += `
+<button
+class="seat ${status}"
+onclick="selectSeat('${seat}')">
+${seat}
+</button>
+`;
+
+if(letter==="C"){
+html +=
+'<div class="aisle"></div>';
+}
+
+});
+
+html += "</div>";
+}
+
+document.getElementById("seatMap")
+.innerHTML = html;
+}
+
+function selectSeat(seat){
+
+selectedSeat = seat;
+
+document.getElementById(
+"selectedSeatLabel"
+).innerText = seat;
+
+document.getElementById(
+"seatInput"
+).value = seat;
+
+renderSeatMap();
+}
+
+function renderMenu(){
+
+let html="";
+
+let select =
+document.getElementById(
+"foodSelect"
+);
+
+select.innerHTML="";
+
+menu.forEach(item=>{
+
+html += `
+<tr>
+<td>${item.name}</td>
+<td>${item.stock}</td>
+<td>
+<button onclick="removeMenuItem(${item.id})">
+X
+</button>
+</td>
+</tr>
+`;
+
+select.innerHTML += `
+<option value="${item.id}">
+${item.name}
+</option>
+`;
+
+});
+
+document.getElementById(
+"menuTable"
+).innerHTML = html;
+}
+
+function renderOrders(){
+
+let html="";
+
+orders.forEach(order=>{
+
+let item =
+menu.find(
+m=>m.id===order.itemId
+);
+
+if(!item) return;
+
+html += `
+<tr>
+<td>${order.seat}</td>
+<td>${item.name}</td>
+<td>${order.qty}</td>
+
+<td>
+
+<button
+onclick="toggleServed(${order.id})">
+
+${order.served ? "✅":"☐"}
+
+</button>
+
+</td>
+
+<td>
+
+<button
+onclick="deleteOrder(${order.id})">
+
+X
+
+</button>
+
+</td>
+
+</tr>
+`;
+
+});
+
+document.getElementById(
+"ordersTable"
+).innerHTML=html;
+}
+
+function renderCookTotals(){
+
+let totals = {};
+
+orders.forEach(order=>{
+
+let item =
+menu.find(
+m=>m.id===order.itemId
+);
+
+if(!item) return;
+
+totals[item.name] =
+(totals[item.name] || 0)
++ order.qty;
+
+});
+
+let html="<ul>";
+
+for(let food in totals){
+
+html += `
+<li>
+${food} x ${totals[food]}
+</li>
+`;
+
+}
+
+html+="</ul>";
+
+document.getElementById(
+"cookTotals"
+).innerHTML = html;
+}
+
+function renderPassengerSummary(){
+
+let grouped = {};
+
+orders.forEach(order=>{
+
+let item =
+menu.find(
+m=>m.id===order.itemId
+);
+
+if(!item) return;
+
+if(!grouped[order.seat]){
+grouped[order.seat]=[];
+}
+
+grouped[order.seat].push(
+`${item.name} x${order.qty}`
+);
+
+});
+
+let html="";
+
+Object.keys(grouped)
+.sort()
+.forEach(seat=>{
+
+html += `
+<p>
+<b>${seat}</b><br>
+${grouped[seat].join("<br>")}
+</p>
+`;
+
+});
+
+document.getElementById(
+"passengerSummary"
+).innerHTML = html;
+}
+
+function renderCrewList(){
+
+let grouped = {};
+
+orders.forEach(order=>{
+
+let item =
+menu.find(
+m=>m.id===order.itemId
+);
+
+if(!item) return;
+
+if(!grouped[order.seat]){
+grouped[order.seat] = [];
+}
+
+grouped[order.seat].push(
+`${item.name} x${order.qty}`
+);
+
+});
+
+let text="";
+
+Object.keys(grouped)
+.sort()
+.forEach(seat=>{
+
+text +=
+seat +
+" - " +
+grouped[seat].join(", ")
++ "\n";
+
+});
+
+document.getElementById(
+"crewList"
+).value = text;
+}
+
+function renderAll(){
+
+renderMenu();
+renderOrders();
+renderCookTotals();
+renderPassengerSummary();
+renderCrewList();
+renderSeatMap();
+
+saveData();
+}
+
+function toggleDarkMode(){
+
+document.body.classList.toggle(
+"dark"
+);
+
+}
+
+renderAll();
+
+</script>
+
+</body>
+</html>
